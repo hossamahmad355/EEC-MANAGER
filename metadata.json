@@ -1,0 +1,6 @@
+{
+  "name": "لوحة التحكم الشاملة - إدارة الشركة والمواقع والبنية التحتية",
+  "description": "نظام متكامل لإدارة مشاريع المقاولات والمواقع الهندسية والبنية التحتية للشبكات والخوادم",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
