@@ -10,6 +10,7 @@ import { HeaderBanner } from './components/HeaderBanner';
 import { Sidebar } from './components/Sidebar';
 import { DashboardHome } from './components/DashboardHome';
 import { SubPages } from './components/SubPages';
+import { ToastContainer } from './components/ToastContainer';
 
 export default function App() {
   const { activePage, theme } = useAppSelector((state) => state.dashboard);
@@ -56,6 +57,10 @@ export default function App() {
           </AnimatePresence>
         </main>
       </div>
+
+      {/* Real-Time Server & Network Health Toast Notifications */}
+      <ToastContainer />
     </div>
   );
 }
+

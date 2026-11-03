@@ -44,7 +44,6 @@ import {
   updateTaskCount,
 } from '../store/dashboardSlice';
 import { ProjectCategoryStatus } from '../types/dashboard';
-import { GoogleDrivePanel } from './GoogleDrivePanel';
 
 export const SubPages: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -73,10 +72,6 @@ export const SubPages: React.FC = () => {
   const [newAssetName, setNewAssetName] = useState('');
   const [newAssetCode, setNewAssetCode] = useState('');
   const [newAssetSite, setNewAssetSite] = useState('الموقع الرئيسي');
-
-  if (activePage === 'drive') {
-    return <GoogleDrivePanel />;
-  }
 
   const renderBackToDashboardButton = () => (
     <button

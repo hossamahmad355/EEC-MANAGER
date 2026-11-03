@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import {
   AlertTriangle,
+  BarChart3,
   Bell,
   Check,
   CheckSquare,
@@ -15,8 +16,26 @@ import {
   Network,
   Server,
   ShieldCheck,
+  TrendingUp,
   Wifi,
 } from 'lucide-react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { useAppDispatch, useAppSelector } from '../store/store';
 import {
   setActivePage,
@@ -24,12 +43,28 @@ import {
   toggleServiceStatus,
   toggleSiteConnection,
 } from '../store/dashboardSlice';
-import { ServiceIconType } from '../types/dashboard';
+import { ProjectCategoryStatus, ServiceIconType } from '../types/dashboard';
 import { KpiStrip } from './KpiStrip';
+import { ServerNetworkMonitor } from './ServerNetworkMonitor';
+
+const MONTHLY_WORKFLOW_DATA = [
+  { month: 'يناير', planned: 25, actual: 27, handovers: 12 },
+  { month: 'فبراير', planned: 34, actual: 36, handovers: 18 },
+  { month: 'مارس', planned: 42, actual: 45, handovers: 24 },
+  { month: 'أبريل', planned: 50, actual: 52, handovers: 31 },
+  { month: 'مايو', planned: 56, actual: 59, handovers: 38 },
+  { month: 'يونيو', planned: 62, actual: 64, handovers: 44 },
+  { month: 'يوليو', planned: 66, actual: 69, handovers: 50 },
+  { month: 'أغسطس', planned: 70, actual: 72, handovers: 54 },
+  { month: 'سبتمبر', planned: 72, actual: 75, handovers: 60 },
+  { month: 'أكتوبر', planned: 75, actual: 77, handovers: 65 },
+  { month: 'نوفمبر', planned: 76, actual: 78, handovers: 70 },
+];
 
 export const DashboardHome: React.FC = () => {
   const dispatch = useAppDispatch();
   const {
+    theme,
     metrics,
     projects,
     services,
@@ -40,6 +75,10 @@ export const DashboardHome: React.FC = () => {
     searchQuery,
   } = useAppSelector((state) => state.dashboard);
 
+  const [chartTab, setChartTab] = useState<'completion' | 'budget'>('completion');
+  const [statusFilter, setStatusFilter] = useState<'all' | ProjectCategoryStatus>('all');
+
+  const isDark = theme === 'dark';
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
   // Filter items if search query is active, otherwise show the exact dashboard items
@@ -60,6 +99,25 @@ export const DashboardHome: React.FC = () => {
   );
 
   const displayedAlerts = alerts.slice(0, 3);
+
+  // Filtered projects for the interactive Recharts Engineering Workflow Panel
+  const chartProjectsData = projects
+    .filter((p) => {
+      if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+      if (normalizedQuery && !p.name.toLowerCase().includes(normalizedQuery)) return false;
+      return true;
+    })
+    .map((p) => ({
+      name: p.name.length > 18 ? p.name.slice(0, 18) + '…' : p.name,
+      fullName: p.name,
+      siteName: p.siteName,
+      manager: p.manager,
+      executionRate: p.executionRate,
+      initialHandover: p.initialHandover,
+      finalHandover: p.finalHandover,
+      budgetMillions: Number((p.budget / 1_000_000).toFixed(1)),
+      spentMillions: Number((p.spent / 1_000_000).toFixed(1)),
+    }));
 
   const renderServiceIcon = (type: ServiceIconType) => {
     switch (type) {
@@ -86,7 +144,7 @@ export const DashboardHome: React.FC = () => {
     }
   };
 
-  // Donut Chart Calculations for Projects Progress (Total = 27)
+  // Donut Chart Data for Projects Progress (Total = 27)
   const totalCount =
     metrics.projectCounts.completed +
     metrics.projectCounts.inProgress +
@@ -98,14 +156,12 @@ export const DashboardHome: React.FC = () => {
   const delayedPct = Number(((metrics.projectCounts.delayed / totalCount) * 100).toFixed(1));
   const atRiskPct = Number(((metrics.projectCounts.atRisk / totalCount) * 100).toFixed(1));
 
-  // SVG Circle circumference for r=44 is 2 * PI * 44 = 276.46
-  const radius = 44;
-  const circumference = 2 * Math.PI * radius;
-
-  const segBlue = (inProgressPct / 100) * circumference;
-  const segGreen = (completedPct / 100) * circumference;
-  const segAmber = (delayedPct / 100) * circumference;
-  const segRed = (atRiskPct / 100) * circumference;
+  const projectDonutData = [
+    { name: 'قيد التنفيذ', value: metrics.projectCounts.inProgress, pct: inProgressPct, color: '#0070f3' },
+    { name: 'مكتملة', value: metrics.projectCounts.completed, pct: completedPct, color: '#16a34a' },
+    { name: 'مؤجلة', value: metrics.projectCounts.delayed, pct: delayedPct, color: '#f59e0b' },
+    { name: 'معرضة للمخاطر', value: metrics.projectCounts.atRisk, pct: atRiskPct, color: '#dc2626' },
+  ];
 
   // Internet Usage circular gauge (r=38, C=238.76)
   const gaugeRadius = 38;
@@ -121,7 +177,7 @@ export const DashboardHome: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
         {/* Right Column in RTL (4 cols): تقدم المشاريع + التنبيهات والإنذارات */}
         <div className="lg:col-span-4 flex flex-col gap-3">
-          {/* Card 1: تقدم المشاريع */}
+          {/* Card 1: تقدم المشاريع (Powered by Recharts PieChart) */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -144,7 +200,7 @@ export const DashboardHome: React.FC = () => {
               </div>
             </div>
 
-            {/* Card Content: Legend on Right, Donut on Left */}
+            {/* Card Content: Legend on Right, Recharts Donut on Left */}
             <div className="flex items-center justify-between gap-2 pt-1">
               {/* Right side in RTL: Legend List */}
               <div className="flex-1 space-y-2.5 pr-1">
@@ -217,65 +273,44 @@ export const DashboardHome: React.FC = () => {
                 </div>
               </div>
 
-              {/* Left side in RTL: Multi-Segment SVG Donut Chart */}
+              {/* Left side in RTL: Recharts Interactive Donut Chart */}
               <div className="relative w-[132px] h-[132px] flex items-center justify-center shrink-0">
-                <svg className="w-full h-full -rotate-90" viewBox="0 0 110 110">
-                  {/* Background track */}
-                  <circle
-                    cx="55"
-                    cy="55"
-                    r={radius}
-                    fill="none"
-                    stroke="#e2e8f0"
-                    strokeWidth="17"
-                    className="dark:stroke-slate-700"
-                  />
-                  {/* Blue Segment (In Progress - 66.7%) */}
-                  <circle
-                    cx="55"
-                    cy="55"
-                    r={radius}
-                    fill="none"
-                    stroke="#0070f3"
-                    strokeWidth="17"
-                    strokeDasharray={`${segBlue} ${circumference}`}
-                    strokeDashoffset={0}
-                  />
-                  {/* Green Segment (Completed - 22.2%) */}
-                  <circle
-                    cx="55"
-                    cy="55"
-                    r={radius}
-                    fill="none"
-                    stroke="#16a34a"
-                    strokeWidth="17"
-                    strokeDasharray={`${segGreen} ${circumference}`}
-                    strokeDashoffset={-segBlue}
-                  />
-                  {/* Amber Segment (Delayed - 7.4%) */}
-                  <circle
-                    cx="55"
-                    cy="55"
-                    r={radius}
-                    fill="none"
-                    stroke="#f59e0b"
-                    strokeWidth="17"
-                    strokeDasharray={`${segAmber} ${circumference}`}
-                    strokeDashoffset={-(segBlue + segGreen)}
-                  />
-                  {/* Red Segment (At Risk - 3.7%) */}
-                  <circle
-                    cx="55"
-                    cy="55"
-                    r={radius}
-                    fill="none"
-                    stroke="#dc2626"
-                    strokeWidth="17"
-                    strokeDasharray={`${segRed} ${circumference}`}
-                    strokeDashoffset={-(segBlue + segGreen + segAmber)}
-                  />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center leading-tight">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={projectDonutData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={36}
+                      outerRadius={54}
+                      startAngle={90}
+                      endAngle={-270}
+                      stroke="none"
+                    >
+                      {projectDonutData.map((entry, idx) => (
+                        <Cell key={`cell-${idx}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: any, name: any, props: any) => [
+                        `${value} مشاريع (${props?.payload?.pct}%)`,
+                        name,
+                      ]}
+                      contentStyle={{
+                        backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                        borderColor: isDark ? '#334155' : '#cbd5e1',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        textAlign: 'right',
+                        direction: 'rtl',
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center leading-tight">
                   <span className="text-[23px] font-black text-[#091e3a] dark:text-white tabular-nums">
                     {metrics.totalProjects}
                   </span>
@@ -363,6 +398,12 @@ export const DashboardHome: React.FC = () => {
                 حالة الأنظمة والخدمات
               </h2>
             </div>
+            <span
+              dir="ltr"
+              className="px-2 py-0.5 rounded-full bg-[#d4f4dc] dark:bg-emerald-950/90 text-[#147a36] dark:text-emerald-300 text-[11px] font-black tabular-nums"
+            >
+              {services.filter((s) => s.status === 'running').length}/{services.length} UP
+            </span>
           </div>
 
           {/* 8 System Services List */}
@@ -374,7 +415,7 @@ export const DashboardHome: React.FC = () => {
                 <div
                   key={srv.id}
                   onClick={() => dispatch(toggleServiceStatus(srv.id))}
-                  title="انقر لتبديل حالة الخدمة"
+                  title="انقر لتبديل حالة الخادم (UP / صيانة / DOWN)"
                   className="py-2 flex items-center justify-between gap-2 hover:bg-blue-50/40 dark:hover:bg-slate-800/50 px-1.5 rounded-lg transition-colors cursor-pointer"
                 >
                   {/* Right side in RTL: Service Icon + Name */}
@@ -385,9 +426,9 @@ export const DashboardHome: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Left side in RTL: Status Pill */}
+                  {/* Left side in RTL: Color Indicator + Status Pill */}
                   <span
-                    className={`px-3.5 py-0.5 rounded-full text-[12px] font-extrabold shrink-0 transition-colors ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11.5px] font-extrabold shrink-0 transition-colors ${
                       isRunning
                         ? 'bg-[#d4f4dc] dark:bg-emerald-950/90 text-[#147a36] dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800'
                         : isMaintenance
@@ -395,7 +436,16 @@ export const DashboardHome: React.FC = () => {
                         : 'bg-rose-100 dark:bg-rose-950/90 text-rose-700 dark:text-rose-300 border border-rose-300/60'
                     }`}
                   >
-                    {isRunning ? 'يعمل' : isMaintenance ? 'صيانة' : 'متوقف'}
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isRunning
+                          ? 'bg-[#16a34a]'
+                          : isMaintenance
+                          ? 'bg-[#f59e0b]'
+                          : 'bg-[#dc2626]'
+                      }`}
+                    />
+                    <span>{isRunning ? 'يعمل (UP)' : isMaintenance ? 'صيانة (WARN)' : 'متوقف (DOWN)'}</span>
                   </span>
                 </div>
               );
@@ -423,7 +473,7 @@ export const DashboardHome: React.FC = () => {
               </div>
             </div>
 
-            {/* 5 Columns Infrastructure Status Grid (Right to Left: نقاط الاتصال | المفاتيح | الموجهات | جدار الحماية | الإنترنت) */}
+            {/* 5 Columns Infrastructure Status Grid */}
             <div className="grid grid-cols-5 divide-x divide-x-reverse divide-slate-200/80 dark:divide-slate-700/70 text-center py-1">
               {/* 1. نقاط الاتصال */}
               <div className="px-1 flex flex-col items-center justify-between gap-2">
@@ -538,7 +588,7 @@ export const DashboardHome: React.FC = () => {
             </div>
           </div>
 
-          {/* Bottom Sub-section: استخدام الإنترنت */}
+          {/* Bottom Sub-section: استخدام الإنترنت (Recharts AreaChart) */}
           <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2.5">
@@ -553,7 +603,7 @@ export const DashboardHome: React.FC = () => {
               </div>
             </div>
 
-            {/* Gauge on Right + Area Line Chart on Left */}
+            {/* Gauge on Right + Recharts AreaChart on Left */}
             <div className="flex items-center justify-between gap-2">
               {/* Right side in RTL: 72% Circular Gauge */}
               <div className="flex flex-col items-center justify-center shrink-0 px-1">
@@ -591,91 +641,69 @@ export const DashboardHome: React.FC = () => {
                 </span>
               </div>
 
-              {/* Left side in RTL: Smooth Area Line Chart (00:00 to 20:00) */}
-              <div dir="ltr" className="flex-1 min-w-0 pt-1">
-                <svg className="w-full h-[120px] overflow-visible" viewBox="0 0 265 115">
-                  <defs>
-                    <linearGradient id="internetAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#1d75f8" stopOpacity="0.48" />
-                      <stop offset="100%" stopColor="#93c5fd" stopOpacity="0.08" />
-                    </linearGradient>
-                  </defs>
-
-                  {/* Horizontal Grid Lines & Y-Axis Labels */}
-                  {[
-                    { label: '100%', y: 10 },
-                    { label: '80%', y: 26 },
-                    { label: '60%', y: 42 },
-                    { label: '40%', y: 58 },
-                    { label: '20%', y: 74 },
-                    { label: '0%', y: 90 },
-                  ].map((row) => (
-                    <g key={row.label}>
-                      <text
-                        x="30"
-                        y={row.y + 3.5}
-                        textAnchor="end"
-                        className="fill-[#0c2340] dark:fill-slate-300 text-[9.5px] font-extrabold tabular-nums"
-                      >
-                        {row.label}
-                      </text>
-                      <line
-                        x1="36"
-                        y1={row.y}
-                        x2="255"
-                        y2={row.y}
-                        stroke="#cbd5e1"
-                        strokeWidth="0.7"
-                        className="dark:stroke-slate-700"
-                      />
-                    </g>
-                  ))}
-
-                  {/* Vertical Grid Lines & X-Axis Time Labels */}
-                  {[
-                    { time: '00:00', x: 36 },
-                    { time: '04:00', x: 78 },
-                    { time: '08:00', x: 120 },
-                    { time: '12:00', x: 162 },
-                    { time: '16:00', x: 204 },
-                    { time: '20:00', x: 246 },
-                  ].map((col) => (
-                    <g key={col.time}>
-                      <line
-                        x1={col.x}
-                        y1="10"
-                        x2={col.x}
-                        y2="90"
-                        stroke="#e2e8f0"
-                        strokeWidth="0.6"
-                        className="dark:stroke-slate-800"
-                      />
-                      <text
-                        x={col.x + 8}
-                        y="105"
-                        textAnchor="middle"
-                        className="fill-[#0c2340] dark:fill-slate-300 text-[9.5px] font-extrabold tabular-nums"
-                      >
-                        {col.time}
-                      </text>
-                    </g>
-                  ))}
-
-                  {/* Area under curve matching the image wave */}
-                  <path
-                    d="M36,58 C50,58 65,50 78,51 C92,52 100,56 112,48 C124,40 130,36 142,41 C154,46 164,56 176,56 C188,56 202,34 215,35 C228,36 235,44 255,41 L255,90 L36,90 Z"
-                    fill="url(#internetAreaGrad)"
-                  />
-
-                  {/* Smooth Line Stroke */}
-                  <path
-                    d="M36,58 C50,58 65,50 78,51 C92,52 100,56 112,48 C124,40 130,36 142,41 C154,46 164,56 176,56 C188,56 202,34 215,35 C228,36 235,44 255,41"
-                    fill="none"
-                    stroke="#0d6efd"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                  />
-                </svg>
+              {/* Left side in RTL: Recharts AreaChart (00:00 to 20:00) */}
+              <div dir="ltr" className="flex-1 min-w-0 h-[122px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={network.usageHistory}
+                    margin={{ top: 6, right: 8, left: -20, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="rechartsInternetGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#1d75f8" stopOpacity={0.5} />
+                        <stop offset="95%" stopColor="#93c5fd" stopOpacity={0.08} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="2 2"
+                      stroke={isDark ? '#334155' : '#cbd5e1'}
+                      vertical={true}
+                    />
+                    <XAxis
+                      dataKey="time"
+                      tick={{
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                        fill: isDark ? '#cbd5e1' : '#0c2340',
+                      }}
+                      tickLine={false}
+                      axisLine={{ stroke: isDark ? '#334155' : '#cbd5e1' }}
+                    />
+                    <YAxis
+                      domain={[0, 100]}
+                      ticks={[0, 20, 40, 60, 80, 100]}
+                      tickFormatter={(v) => `${v}%`}
+                      tick={{
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                        fill: isDark ? '#cbd5e1' : '#0c2340',
+                      }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      formatter={(val: any) => [`${val}%`, 'استهلاك الإنترنت']}
+                      labelFormatter={(label) => `الساعة: ${label}`}
+                      contentStyle={{
+                        backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                        borderColor: isDark ? '#334155' : '#cbd5e1',
+                        borderRadius: '10px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        direction: 'rtl',
+                        textAlign: 'right',
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke="#0d6efd"
+                      strokeWidth={2.4}
+                      fillOpacity={1}
+                      fill="url(#rechartsInternetGrad)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </div>
@@ -696,7 +724,6 @@ export const DashboardHome: React.FC = () => {
             <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-200/80 dark:border-slate-700/80">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-[#0e4da4] text-white flex items-center justify-center shadow-xs">
-                  {/* Construction Tower Crane Icon */}
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M9 3v18M5 21h8M4 7h16M9 3l7 4M9 3L5 7m12 0v6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
@@ -730,10 +757,8 @@ export const DashboardHome: React.FC = () => {
                   onClick={() => dispatch(setActivePage('projects'))}
                   className="grid grid-cols-12 items-center px-2 py-2.5 text-[13px] font-extrabold text-[#0c2340] dark:text-slate-100 hover:bg-blue-50/40 dark:hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer"
                 >
-                  {/* المشروع */}
                   <div className="col-span-4 text-right truncate pr-1">{project.name}</div>
 
-                  {/* نسبة التنفيذ */}
                   <div dir="ltr" className="col-span-3 flex items-center justify-center gap-1.5 px-1">
                     <span className="text-[12.5px] font-black tabular-nums w-8 text-right">
                       {project.executionRate}%
@@ -746,7 +771,6 @@ export const DashboardHome: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* التسليم الإبتدائي */}
                   <div dir="ltr" className="col-span-3 flex items-center justify-center gap-1.5 px-1">
                     <span className="text-[12.5px] font-black tabular-nums w-8 text-right">
                       {project.initialHandover}%
@@ -761,7 +785,6 @@ export const DashboardHome: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* التسليم النهائي */}
                   <div dir="ltr" className="col-span-2 text-left pl-2 font-black text-[12.5px] tabular-nums">
                     {project.finalHandover}%
                   </div>
@@ -873,10 +896,8 @@ export const DashboardHome: React.FC = () => {
                   title="انقر لتبديل حالة اتصال الموقع"
                   className="grid grid-cols-12 items-center px-2 py-2 text-[13px] font-extrabold text-[#0c2340] dark:text-slate-100 hover:bg-blue-50/40 dark:hover:bg-slate-800/50 rounded-lg transition-colors cursor-pointer"
                 >
-                  {/* الموقع */}
                   <div className="col-span-3 text-right truncate">{site.name}</div>
 
-                  {/* حالة الاتصال */}
                   <div className="col-span-3 flex justify-center">
                     {site.connected ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#d4f4dc] dark:bg-emerald-950/90 text-[#147a36] dark:text-emerald-300 text-[11.5px] font-extrabold">
@@ -893,7 +914,6 @@ export const DashboardHome: React.FC = () => {
                     )}
                   </div>
 
-                  {/* استخدام الإنترنت */}
                   <div dir="ltr" className="col-span-4 flex items-center justify-center gap-1.5 px-1">
                     <span className="text-[12.5px] font-black tabular-nums w-8 text-right">
                       {site.internetUsage}%
@@ -908,7 +928,6 @@ export const DashboardHome: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* الأجهزة */}
                   <div className="col-span-2 text-center font-black text-[13.5px] tabular-nums">
                     {site.devicesCount !== null ? site.devicesCount : '—'}
                   </div>
@@ -918,6 +937,385 @@ export const DashboardHome: React.FC = () => {
           </div>
         </motion.div>
       </div>
+
+      {/* Row 4: Interactive Recharts Engineering Workflow & Completion Analytics Panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+        {/* Right Card in RTL (7 cols): مقارنة نسب الإنجاز ومراحل التسليم للمشاريع الهندسية */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.23 }}
+          className="lg:col-span-7 rounded-2xl bg-gradient-to-b from-white via-[#fafdff] to-[#f0f6fc] dark:from-slate-900 dark:via-slate-900 dark:to-slate-800/90 border border-white dark:border-slate-700/80 shadow-[0_4px_16px_rgba(12,35,64,0.07)] p-3.5 flex flex-col justify-between"
+        >
+          {/* Header with Interactive Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-3 border-b border-slate-200/80 dark:border-slate-700/80">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#0e4da4] text-white flex items-center justify-center shadow-xs">
+                <BarChart3 className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-[15.5px] font-black text-[#0a2246] dark:text-white leading-snug">
+                  تحليل سير العمل ونسب الإنجاز في المشاريع الهندسية
+                </h2>
+                <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  مقارنة تفاعلية لنسب التنفيذ الفعلي ومراحل التسليم والميزانية المرصودة
+                </p>
+              </div>
+            </div>
+
+            {/* Mode & Status Filter Controls */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-[#dce8f5] dark:bg-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setChartTab('completion')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-colors cursor-pointer ${
+                    chartTab === 'completion'
+                      ? 'bg-[#0e4da4] text-white shadow-xs'
+                      : 'text-[#0c2340] dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  نسب الإنجاز والتسليم
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartTab('budget')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition-colors cursor-pointer ${
+                    chartTab === 'budget'
+                      ? 'bg-[#0e4da4] text-white shadow-xs'
+                      : 'text-[#0c2340] dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  الميزانية والمنصرف (مليون ج.م)
+                </button>
+              </div>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as 'all' | ProjectCategoryStatus)}
+                aria-label="تصفية حسب حالة المشروع"
+                className="px-2.5 py-1.5 rounded-xl bg-[#dce8f5] dark:bg-slate-800 text-[#0c2340] dark:text-slate-200 text-[11px] font-extrabold border border-blue-200/60 dark:border-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value="all">كل الحالات ({projects.length})</option>
+                <option value="in_progress">قيد التنفيذ</option>
+                <option value="completed">مكتملة</option>
+                <option value="delayed">مؤجلة</option>
+                <option value="at_risk">معرضة للمخاطر</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Interactive Recharts Bar / Composed Chart */}
+          <div dir="ltr" className="w-full h-[255px]">
+            <ResponsiveContainer width="100%" height="100%">
+              {chartTab === 'completion' ? (
+                <BarChart
+                  data={chartProjectsData}
+                  margin={{ top: 10, right: 12, left: -12, bottom: 20 }}
+                  barGap={4}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke={isDark ? '#334155' : '#cbd5e1'}
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="name"
+                    tick={{
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      fill: isDark ? '#cbd5e1' : '#0c2340',
+                    }}
+                    angle={-12}
+                    textAnchor="end"
+                    height={46}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    domain={[0, 100]}
+                    tickFormatter={(v) => `${v}%`}
+                    tick={{
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      fill: isDark ? '#cbd5e1' : '#0c2340',
+                    }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    formatter={(value: any, name: any) => [`${value}%`, name]}
+                    labelFormatter={(_, payload) => {
+                      const item = payload?.[0]?.payload;
+                      return item
+                        ? `${item.fullName} — (${item.siteName} · ${item.manager})`
+                        : '';
+                    }}
+                    contentStyle={{
+                      backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                      borderColor: isDark ? '#334155' : '#cbd5e1',
+                      borderRadius: '12px',
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      direction: 'rtl',
+                      textAlign: 'right',
+                    }}
+                  />
+                  <Legend
+                    wrapperStyle={{
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      paddingTop: '4px',
+                    }}
+                  />
+                  <Bar
+                    dataKey="executionRate"
+                    name="نسبة التنفيذ الفعلي"
+                    fill="#16a34a"
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={24}
+                  />
+                  <Bar
+                    dataKey="initialHandover"
+                    name="التسليم الإبتدائي"
+                    fill="#0284c7"
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={24}
+                  />
+                  <Bar
+                    dataKey="finalHandover"
+                    name="التسليم النهائي"
+                    fill="#6366f1"
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={24}
+                  />
+                </BarChart>
+              ) : (
+                <ComposedChart
+                  data={chartProjectsData}
+                  margin={{ top: 10, right: 12, left: -8, bottom: 20 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke={isDark ? '#334155' : '#cbd5e1'}
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="name"
+                    tick={{
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      fill: isDark ? '#cbd5e1' : '#0c2340',
+                    }}
+                    angle={-12}
+                    textAnchor="end"
+                    height={46}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    yAxisId="left"
+                    tickFormatter={(v) => `${v}م`}
+                    tick={{
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      fill: isDark ? '#cbd5e1' : '#0c2340',
+                    }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    domain={[0, 100]}
+                    tickFormatter={(v) => `${v}%`}
+                    tick={{
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      fill: '#16a34a',
+                    }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    formatter={(value: any, name: any) => [
+                      name === 'نسبة التنفيذ' ? `${value}%` : `${value} مليون ج.م`,
+                      name,
+                    ]}
+                    contentStyle={{
+                      backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                      borderColor: isDark ? '#334155' : '#cbd5e1',
+                      borderRadius: '12px',
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      direction: 'rtl',
+                      textAlign: 'right',
+                    }}
+                  />
+                  <Legend
+                    wrapperStyle={{
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      paddingTop: '4px',
+                    }}
+                  />
+                  <Bar
+                    yAxisId="left"
+                    dataKey="budgetMillions"
+                    name="الميزانية المعتمدة"
+                    fill="#1560bd"
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={26}
+                  />
+                  <Bar
+                    yAxisId="left"
+                    dataKey="spentMillions"
+                    name="المنصرف الفعلي"
+                    fill="#f59e0b"
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={26}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="executionRate"
+                    name="نسبة التنفيذ"
+                    stroke="#16a34a"
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: '#16a34a' }}
+                  />
+                </ComposedChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+
+        {/* Left Card in RTL (5 cols): المنحنى التراكمي لسير العمل الهندسي والمستهدف الشهري */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.26 }}
+          className="lg:col-span-5 rounded-2xl bg-gradient-to-b from-white via-[#fafdff] to-[#f0f6fc] dark:from-slate-900 dark:via-slate-900 dark:to-slate-800/90 border border-white dark:border-slate-700/80 shadow-[0_4px_16px_rgba(12,35,64,0.07)] p-3.5 flex flex-col justify-between"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-slate-200/80 dark:border-slate-700/80">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#16a34a] text-white flex items-center justify-center shadow-xs">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-[15.5px] font-black text-[#0a2246] dark:text-white leading-snug">
+                  المنحنى الزمني لسير العمل والإنجاز التراكمي (2026)
+                </h2>
+                <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  مقارنة الإنجاز الفعلي التراكمي (78%) بالمخطط الزمني المستهدف
+                </p>
+              </div>
+            </div>
+
+            <span
+              dir="ltr"
+              className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/90 text-[#15803d] dark:text-emerald-300 text-xs font-black tabular-nums"
+            >
+              ↑ {metrics.overallCompletionDelta} تقدم
+            </span>
+          </div>
+
+          {/* Recharts AreaChart for Cumulative Workflow Progress */}
+          <div dir="ltr" className="w-full h-[255px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={MONTHLY_WORKFLOW_DATA}
+                margin={{ top: 10, right: 10, left: -16, bottom: 10 }}
+              >
+                <defs>
+                  <linearGradient id="actualProgressGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#16a34a" stopOpacity={0.45} />
+                    <stop offset="95%" stopColor="#16a34a" stopOpacity={0.04} />
+                  </linearGradient>
+                  <linearGradient id="plannedProgressGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0284c7" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#0284c7" stopOpacity={0.03} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={isDark ? '#334155' : '#cbd5e1'}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="month"
+                  tick={{
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                    fill: isDark ? '#cbd5e1' : '#0c2340',
+                  }}
+                  tickLine={false}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  tickFormatter={(v) => `${v}%`}
+                  tick={{
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                    fill: isDark ? '#cbd5e1' : '#0c2340',
+                  }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  formatter={(val: any, name: any) => [`${val}%`, name]}
+                  labelFormatter={(label) => `شهر: ${label} 2026`}
+                  contentStyle={{
+                    backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                    borderColor: isDark ? '#334155' : '#cbd5e1',
+                    borderRadius: '12px',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    direction: 'rtl',
+                    textAlign: 'right',
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    paddingTop: '6px',
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="actual"
+                  name="الإنجاز الفعلي التراكمي"
+                  stroke="#16a34a"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#actualProgressGrad)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="planned"
+                  name="المخطط الهندسي المستهدف"
+                  stroke="#0284c7"
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  fillOpacity={1}
+                  fill="url(#plannedProgressGrad)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="handovers"
+                  name="معدل التسليمات الإبتدائية"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  fill="none"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Row 5: Server & Network Infrastructure Up/Down Monitoring System */}
+      <ServerNetworkMonitor />
     </div>
   );
 };

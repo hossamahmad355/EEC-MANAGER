@@ -11,7 +11,6 @@ import {
   BarChart3,
   ClipboardCheck,
   Box,
-  HardDrive,
   Settings,
   ChevronDown,
   X,
@@ -43,7 +42,6 @@ const NAV_ITEMS: NavItemConfig[] = [
   { id: 'reports', label: 'التقارير والتحليل', icon: BarChart3 },
   { id: 'requests', label: 'إدارة الطلبات', icon: ClipboardCheck },
   { id: 'assets', label: 'إدارة الأصول', icon: Box },
-  { id: 'drive', label: 'ملفات Google Drive', icon: HardDrive },
   { id: 'settings', label: 'الإعدادات', icon: Settings },
 ];
 

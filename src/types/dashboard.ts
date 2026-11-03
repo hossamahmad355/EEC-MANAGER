@@ -9,7 +9,6 @@ export type NavSectionId =
   | 'reports'
   | 'requests'
   | 'assets'
-  | 'drive'
   | 'settings';
 
 export type ProjectCategoryStatus = 'completed' | 'in_progress' | 'delayed' | 'at_risk';
@@ -135,6 +134,21 @@ export interface DashboardSummaryMetrics {
   };
 }
 
+export interface ToastNotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: 'critical' | 'warning' | 'success' | 'info';
+  sourceName: string;
+  ipOrLocation?: string;
+  fromStatus?: 'UP' | 'WARN' | 'DOWN';
+  toStatus?: 'UP' | 'WARN' | 'DOWN';
+  targetType?: 'server' | 'site';
+  targetId?: string;
+  timestamp: string;
+  durationMs?: number;
+}
+
 export interface DashboardState {
   activePage: NavSectionId;
   theme: 'light' | 'dark';
@@ -152,4 +166,6 @@ export interface DashboardState {
   network: NetworkInfrastructureState;
   employees: EmployeeItem[];
   assets: AssetItem[];
+  toasts: ToastNotificationItem[];
 }
+

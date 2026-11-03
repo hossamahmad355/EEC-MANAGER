@@ -8,6 +8,7 @@ import {
   ProjectItem,
   SiteStatusItem,
   SystemServiceItem,
+  ToastNotificationItem,
 } from '../types/dashboard';
 
 export const STORAGE_KEY = 'eec_operations_dashboard_state_v1';
@@ -249,6 +250,30 @@ export const initialDashboardState: DashboardState = {
       severity: 'info',
       timestamp: 'منذ ساعة',
       location: 'مركز البيانات الرئيسي',
+      resolved: false,
+    },
+    {
+      id: 'alt-4',
+      message: 'تجاوز سعة التخزين الاحتياطي نسبة (80%) في خادم الملفات',
+      severity: 'warning',
+      timestamp: 'منذ ساعتين',
+      location: 'الموقع الرئيسي',
+      resolved: false,
+    },
+    {
+      id: 'alt-5',
+      message: 'اكتمال الفحص الدوري لجدار الحماية (FortiGate HA) بنجاح',
+      severity: 'info',
+      timestamp: 'منذ 3 ساعات',
+      location: 'الشبكة المركزية',
+      resolved: true,
+    },
+    {
+      id: 'alt-6',
+      message: 'انخفاض سرعة استجابة رابط الـ VPN في موقع 3',
+      severity: 'warning',
+      timestamp: 'منذ 4 ساعات',
+      location: 'موقع 3',
       resolved: false,
     },
   ],
@@ -499,7 +524,27 @@ export const initialDashboardState: DashboardState = {
       value: 2100000,
     },
   ],
+  toasts: [],
 };
+
+function mapServiceStatusToCode(status: SystemServiceItem['status']): 'UP' | 'WARN' | 'DOWN' {
+  if (status === 'running') return 'UP';
+  if (status === 'maintenance') return 'WARN';
+  return 'DOWN';
+}
+
+function pushToast(state: DashboardState, toast: Omit<ToastNotificationItem, 'id' | 'timestamp'>) {
+  const nowStr = new Date().toLocaleTimeString('ar-EG');
+  const newToast: ToastNotificationItem = {
+    ...toast,
+    id: `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: nowStr,
+  };
+  if (!Array.isArray(state.toasts)) {
+    state.toasts = [];
+  }
+  state.toasts = [newToast, ...state.toasts].slice(0, 5);
+}
 
 function loadPersistedState(): DashboardState {
   if (typeof window === 'undefined') return initialDashboardState;
@@ -510,6 +555,7 @@ function loadPersistedState(): DashboardState {
     return {
       ...initialDashboardState,
       ...parsed,
+      toasts: [],
       metrics: {
         ...initialDashboardState.metrics,
         ...(parsed.metrics || {}),
@@ -583,28 +629,191 @@ const dashboardSlice = createSlice({
     toggleServiceStatus(state, action: PayloadAction<string>) {
       const srv = state.services.find((s) => s.id === action.payload);
       if (srv) {
+        const prevCode = mapServiceStatusToCode(srv.status);
         if (srv.status === 'running') srv.status = 'maintenance';
         else if (srv.status === 'maintenance') srv.status = 'stopped';
         else srv.status = 'running';
+
+        const nextCode = mapServiceStatusToCode(srv.status);
+        const nowStr = new Date().toLocaleTimeString('ar-EG');
+
+        if (nextCode === 'DOWN') {
+          pushToast(state, {
+            title: 'تنبيه حرج: توقف الخادم (Server DOWN)',
+            message: `انقطع الاتصال بخادم «${srv.name}» وتغيرت حالته من ${prevCode} إلى DOWN.`,
+            type: 'critical',
+            sourceName: srv.name,
+            ipOrLocation: srv.ipAddress,
+            fromStatus: prevCode,
+            toStatus: 'DOWN',
+            targetType: 'server',
+            targetId: srv.id,
+            durationMs: 7000,
+          });
+          state.alerts.unshift({
+            id: `alt-${Date.now()}`,
+            message: `توقف خادم ${srv.name} (${srv.ipAddress}) — الحالة: DOWN`,
+            severity: 'critical',
+            timestamp: nowStr,
+            location: 'مركز البيانات الرئيسي',
+            resolved: false,
+          });
+        } else if (nextCode === 'WARN') {
+          pushToast(state, {
+            title: 'تحذير البنية التحتية: وضع الصيانة (WARN)',
+            message: `تم تحويل «${srv.name}» من حالة ${prevCode} إلى وضع الصيانة المجدولة (WARN).`,
+            type: 'warning',
+            sourceName: srv.name,
+            ipOrLocation: srv.ipAddress,
+            fromStatus: prevCode,
+            toStatus: 'WARN',
+            targetType: 'server',
+            targetId: srv.id,
+            durationMs: 5500,
+          });
+        } else {
+          pushToast(state, {
+            title: 'استعادة الخادم بنجاح (Server UP)',
+            message: `عاد خادم «${srv.name}» للعمل بكفاءة عالية (حالة UP).`,
+            type: 'success',
+            sourceName: srv.name,
+            ipOrLocation: srv.ipAddress,
+            fromStatus: prevCode,
+            toStatus: 'UP',
+            targetType: 'server',
+            targetId: srv.id,
+            durationMs: 4500,
+          });
+        }
       }
       state.lastSavedAt = new Date().toLocaleTimeString('ar-EG');
     },
+    setServiceStatus(
+      state,
+      action: PayloadAction<{ id: string; status: SystemServiceItem['status'] }>
+    ) {
+      const srv = state.services.find((s) => s.id === action.payload.id);
+      if (srv && srv.status !== action.payload.status) {
+        const prevCode = mapServiceStatusToCode(srv.status);
+        srv.status = action.payload.status;
+        const nextCode = mapServiceStatusToCode(srv.status);
+        const nowStr = new Date().toLocaleTimeString('ar-EG');
+
+        if (nextCode === 'DOWN') {
+          pushToast(state, {
+            title: 'تنبيه حرج: توقف الخادم (Server DOWN)',
+            message: `تغيرت حالة «${srv.name}» فوراً من ${prevCode} إلى DOWN (متوقف عن الاستجابة).`,
+            type: 'critical',
+            sourceName: srv.name,
+            ipOrLocation: srv.ipAddress,
+            fromStatus: prevCode,
+            toStatus: 'DOWN',
+            targetType: 'server',
+            targetId: srv.id,
+            durationMs: 7000,
+          });
+          state.alerts.unshift({
+            id: `alt-${Date.now()}`,
+            message: `توقف مفاجئ في ${srv.name} (${srv.ipAddress}) — انتقل من ${prevCode} إلى DOWN`,
+            severity: 'critical',
+            timestamp: nowStr,
+            location: 'مركز البيانات الرئيسي',
+            resolved: false,
+          });
+        } else if (nextCode === 'WARN') {
+          pushToast(state, {
+            title: 'تحذير حالة الخادم (Server WARN)',
+            message: `انتقل خادم «${srv.name}» من ${prevCode} إلى حالة الصيانة (WARN).`,
+            type: 'warning',
+            sourceName: srv.name,
+            ipOrLocation: srv.ipAddress,
+            fromStatus: prevCode,
+            toStatus: 'WARN',
+            targetType: 'server',
+            targetId: srv.id,
+            durationMs: 5500,
+          });
+        } else {
+          pushToast(state, {
+            title: 'استعادة عمل الخادم (Server UP)',
+            message: `تم تشغيل «${srv.name}» بنجاح وعاد من ${prevCode} إلى UP.`,
+            type: 'success',
+            sourceName: srv.name,
+            ipOrLocation: srv.ipAddress,
+            fromStatus: prevCode,
+            toStatus: 'UP',
+            targetType: 'server',
+            targetId: srv.id,
+            durationMs: 4500,
+          });
+        }
+        state.lastSavedAt = nowStr;
+      }
+    },
     updateServiceAllRunning(state) {
+      const affectedCount = state.services.filter((s) => s.status !== 'running').length;
       state.services.forEach((s) => {
         s.status = 'running';
       });
+      if (affectedCount > 0) {
+        pushToast(state, {
+          title: 'استعادة شاملة للخوادم (All Servers UP)',
+          message: `تمت إعادة تشغيل ${affectedCount} خوادم بنجاح؛ جميع الأنظمة (8/8) تعمل الآن بحالة UP.`,
+          type: 'success',
+          sourceName: 'مركز البيانات الرئيسي',
+          ipOrLocation: '10.10.1.0/24',
+          fromStatus: 'DOWN',
+          toStatus: 'UP',
+          durationMs: 5000,
+        });
+      }
       state.lastSavedAt = new Date().toLocaleTimeString('ar-EG');
     },
     toggleSiteConnection(state, action: PayloadAction<string>) {
       const site = state.sites.find((s) => s.id === action.payload);
       if (site) {
+        const wasConnected = site.connected;
         site.connected = !site.connected;
+        const nowStr = new Date().toLocaleTimeString('ar-EG');
+
         if (site.connected) {
           site.internetUsage = site.internetUsage === 0 ? 45 : site.internetUsage;
           site.devicesCount = site.devicesCount === null ? 18 : site.devicesCount;
+          pushToast(state, {
+            title: 'استعادة اتصال الموقع (Node UP)',
+            message: `عاد خط الربط الشبكي في «${site.name}» (${site.city}) للعمل بحالة UP.`,
+            type: 'success',
+            sourceName: site.name,
+            ipOrLocation: site.city,
+            fromStatus: wasConnected ? 'UP' : 'DOWN',
+            toStatus: 'UP',
+            targetType: 'site',
+            targetId: site.id,
+            durationMs: 4500,
+          });
         } else {
           site.internetUsage = 0;
           site.devicesCount = null;
+          pushToast(state, {
+            title: 'انقطاع اتصال الشبكة (Node DOWN)',
+            message: `فشل الاتصال بعقدة «${site.name}» (${site.city}) — انتقلت الحالة من UP إلى DOWN.`,
+            type: 'critical',
+            sourceName: site.name,
+            ipOrLocation: site.city,
+            fromStatus: 'UP',
+            toStatus: 'DOWN',
+            targetType: 'site',
+            targetId: site.id,
+            durationMs: 7000,
+          });
+          state.alerts.unshift({
+            id: `alt-${Date.now()}`,
+            message: `انقطاع اتصال الشبكة في (${site.name} - ${site.city}) — الحالة: DOWN`,
+            severity: 'critical',
+            timestamp: nowStr,
+            location: site.name,
+            resolved: false,
+          });
         }
       }
       state.lastSavedAt = new Date().toLocaleTimeString('ar-EG');
@@ -629,6 +838,12 @@ const dashboardSlice = createSlice({
       if (alert) {
         alert.resolved = !alert.resolved;
       }
+      state.lastSavedAt = new Date().toLocaleTimeString('ar-EG');
+    },
+    markAllAlertsResolved(state) {
+      state.alerts.forEach((a) => {
+        a.resolved = true;
+      });
       state.lastSavedAt = new Date().toLocaleTimeString('ar-EG');
     },
     addAlert(state, action: PayloadAction<Omit<AlertItem, 'id' | 'resolved'>>) {
@@ -665,23 +880,24 @@ const dashboardSlice = createSlice({
       });
       state.lastSavedAt = new Date().toLocaleTimeString('ar-EG');
     },
-    importDashboardState(state, action: PayloadAction<Partial<DashboardState>>) {
-      const incoming = action.payload;
-      if (incoming.metrics) state.metrics = incoming.metrics;
-      if (incoming.projects) state.projects = incoming.projects;
-      if (incoming.services) state.services = incoming.services;
-      if (incoming.alerts) state.alerts = incoming.alerts;
-      if (incoming.tasks) state.tasks = incoming.tasks;
-      if (incoming.sites) state.sites = incoming.sites;
-      if (incoming.network) state.network = incoming.network;
-      if (incoming.employees) state.employees = incoming.employees;
-      if (incoming.assets) state.assets = incoming.assets;
-      state.lastSavedAt = `تمت الاستعادة من Google Drive (${new Date().toLocaleTimeString('ar-EG')})`;
+    addToast(state, action: PayloadAction<Omit<ToastNotificationItem, 'id' | 'timestamp'>>) {
+      pushToast(state, action.payload);
+    },
+    dismissToast(state, action: PayloadAction<string>) {
+      if (!Array.isArray(state.toasts)) {
+        state.toasts = [];
+        return;
+      }
+      state.toasts = state.toasts.filter((t) => t.id !== action.payload);
+    },
+    clearAllToasts(state) {
+      state.toasts = [];
     },
     resetToDefaults(state) {
       const currentTheme = state.theme;
       Object.assign(state, initialDashboardState, {
         theme: currentTheme,
+        toasts: [],
         lastSavedAt: 'تمت استعادة البيانات الافتراضية',
       });
       if (typeof window !== 'undefined') {
@@ -700,18 +916,23 @@ export const {
   updateProjectProgress,
   addProject,
   toggleServiceStatus,
+  setServiceStatus,
   updateServiceAllRunning,
   toggleSiteConnection,
   updateSiteUsage,
   addSite,
   toggleAlertResolved,
+  markAllAlertsResolved,
   addAlert,
   updateTaskCount,
   updateNetworkAverage,
   addEmployee,
   addAsset,
-  importDashboardState,
+  addToast,
+  dismissToast,
+  clearAllToasts,
   resetToDefaults,
 } = dashboardSlice.actions;
 
 export default dashboardSlice.reducer;
+
